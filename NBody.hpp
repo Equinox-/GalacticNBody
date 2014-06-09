@@ -54,6 +54,8 @@ class NBody
 
     public:
 
+        int centerObject;
+
         CLCommandArgs   *sampleArgs;   /**< CLCommand argument class */
 
         cl_int numParticles;
@@ -66,8 +68,8 @@ class NBody
         explicit NBody()
             : setupTime(0),
               kernelTime(0),
-              delT(60.0f * 60.0f * 24.0f * 365.25f * 1000.0f * 1000.0f),
-              espSqr(1e25f),
+              delT(60.0f * 60.0f * 24.0f * 365.25f * 1000.0f * 50.0f),
+              espSqr(1.0f),
               initPos(NULL),
               initVel(NULL),
               vel(NULL),
@@ -85,7 +87,7 @@ class NBody
             sampleArgs = new CLCommandArgs();
             sampleTimer = new SDKTimer();
             sampleArgs->sampleVerStr = SAMPLE_VERSION;
-            numParticles = 10000;
+            numParticles = 30000;
         }
 
         ~NBody();

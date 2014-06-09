@@ -8,6 +8,12 @@ void nbody_sim(__global float4* pos, __global float4* vel
     float4 myPosRoot = pos[gid];
     float4 oldVel = vel[gid];
 
+    if (myPosRoot.w <= 0.0f) {
+        newPosition[gid] = myPosRoot;
+        newVelocity[gid] = oldVel;
+        return;
+    }
+
     float4 acc[5];
     acc[0] = (float4)0.0f;
     acc[1] = (float4)0.0f;
@@ -18,8 +24,11 @@ void nbody_sim(__global float4* pos, __global float4* vel
 
     int i = 0;
     int k = 1;
+
+    int lostMass = 0;
+    
     for (; k < 5; ++k) {
-        float mult = deltaTime * abs(3 - k) / 2.0f;
+        float mult = deltaTime * (float)abs(3 - k) / 2.0f;
         float4 myPos;
         myPos.xyz = myPosRoot.xyz + oldVel.xyz * mult + acc[k-1].xyz * 0.5f * mult * mult;
         for (; (i+UNROLL_FACTOR) < numBodies; ) {
@@ -29,35 +38,56 @@ void nbody_sim(__global float4* pos, __global float4* vel
                 float4 r;
                 r.xyz = p.xyz - myPos.xyz;
                 float distSqr = r.x * r.x  +  r.y * r.y  +  r.z * r.z;
-
-                float invDist = 1.0f / sqrt(distSqr + epsSqr);
-                float invDistCube = p.w * invDist * invDist * invDist;
+                float dist = sqrt(distSqr + epsSqr);
+                float invDist = 1.0f / dist;
+                float invDistCube = (p.w + ((p.w > 1.0e6f)*(5.0E6f * dist))) * invDist * invDist * invDist;
                 float s = invDistCube;
 
                 // accumulate effect of all particles
-                acc[k].xyz += s * r.xyz;
+                acc[k].xyz += (gid != i) * s * r.xyz;
+                if (gid != i && distSqr < 1E2) {
+                    acc[k].w += p.w;
+                    if (p.w > 1.0e6f) {
+                        lostMass = 1;
+                    }
+                }
             }
         }
-        for (; i < numBodies; i++) {
-            float4 p = pos[i];
+        // for (; i < numBodies; i++) {
+        //     float4 p = pos[i];
 
-            float4 r;
-            r.xyz = p.xyz - myPos.xyz;
-            float distSqr = r.x * r.x  +  r.y * r.y  +  r.z * r.z;
+        //     float4 r;
+        //     r.xyz = p.xyz - myPos.xyz;
+        //     float distSqr = r.x * r.x  +  r.y * r.y  +  r.z * r.z;
 
-            float invDist = 1.0f / sqrt(distSqr + epsSqr);
-            float invDistCube = p.w * invDist * invDist * invDist;
-            float s = invDistCube;
+        //     float invDist = 1.0f / sqrt(distSqr + epsSqr);
+        //     float invDistCube = p.w * invDist * invDist * invDist;
+        //     float s = invDistCube;
 
-            // accumulate effect of all particles
-            acc[k].xyz += s * r.xyz;
-        }
-        acc[k].xyz *= 6.67384e-11f / 1e18f;
+        //     // accumulate effect of all particles
+        //     acc[k].xyz += (gid != i) * s * r.xyz;
+        //     if (gid != i && distSqr < 2) {
+        //         acc[k].w += p.w;
+        //         if (p.w > 1.0e6f) {
+        //             lostMass = 1;
+        //         }
+        //     }
+        // }
+        acc[k].xyz *= 1.567783995250E-28f;
     }
 
     acc[0] = (float4)0.0f;
     for (k = 1; k<5; ++k) {
-        acc[0].xyz += acc[k].xyz * (abs(3 - k) / 6.0f);
+        acc[0].xyz += acc[k].xyz * ((float)abs(3 - k) / 6.0f);
+        acc[0].w += acc[k].w * ((float)abs(3-k) / 6.0f);
+    }
+
+    float4 newVel;
+    newVel.xyz = oldVel.xyz + acc[0].xyz * deltaTime;
+    newVel.w = oldVel.w;
+
+    if (myPosRoot.w > 1.0e6f) {
+        acc[0].x = acc[0].y = acc[0].z = 0;
     }
 
     // updated position and velocity
@@ -65,9 +95,14 @@ void nbody_sim(__global float4* pos, __global float4* vel
     newPos.xyz = myPosRoot.xyz + oldVel.xyz * deltaTime + acc[0].xyz * 0.5f * deltaTime * deltaTime;
     newPos.w = myPosRoot.w;
 
-    float4 newVel;
-    newVel.xyz = oldVel.xyz + acc[0].xyz * deltaTime;
-    newVel.w = oldVel.w;
+    if (newPos.w > 1.0e6f && acc[0].w > 0.0f) {
+        newPos.w += acc[0].w;
+    }
+
+
+    if (lostMass) {
+        newPos.w = 0;
+    }
 
     // write to global memory
     newPosition[gid] = newPos;

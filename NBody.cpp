@@ -30,17 +30,19 @@ inline float min(float a, float b) {
     return a<b?a:b;
 }
 
-float blackHoleMass = 4.1e6 * 1.989e30f;
-float galacticRadius = 60e3f * 9.4605284e9f;
-float galacticBuldge = 10e3f * 9.4605284e9f;
-
+// G = 6.67384e-11f                         m^3 * kg^-1 * s^-2
+// G = 6.67384e-11 / (9.4605284E15 ^ 3)     ly^3 * kg^-1 * s^-2
+// G = 6.67384e-11 / (9.4605284E15 ^ 3) * 1.9891E30
+// G = 1.567783995250E-28
+float blackHoleMass = 2.6e6f;
+float galacticRadius = 100e3f;
+float diskRadius = 1e3;
+float galacticBuldge = 10e3f;
 void NBody::generateGalaxy(int count, int offset, float branches, float pitch, float cX, float cY, float cZ, float vX, float vY, float vZ) {
-    initPos[offset*4] = initPos[offset*4+1] = initPos[offset*4+2] = 0;
-    initPos[offset*4+3] = blackHoleMass;
-    initVel[offset*4] = initVel[offset*4+1] = initVel[offset*4+2] = 0;
+    float totalMass = blackHoleMass;
     for(int i = offset + 1; i < offset + count; ++i)
     {
-        int index = 4 * i;
+        int index = i << 2;
         int vIndex = index;
 
         // First 3 values are position in x,y and z direction
@@ -56,30 +58,34 @@ void NBody::generateGalaxy(int count, int offset, float branches, float pitch, f
         angle += randomGauss(pow(normalMag,2)-1.75f, 1.75f-pow(normalMag,2)); // More random*/
 
         float branch = floor(random(0, 1) * branches);
-        float angle = pow(random(0, 1), 0.75) * 6.28;
+        float angle = 6.28f - (((float)(i-offset)) * 6.28 / count);//pow(random(0, 1), 0.75) * 6.28;
         float magnitude = (6.5f - angle) / 6.28 * galacticRadius;
         angle += (6.28f / branches) * branch;
 
         float normalMag = magnitude/galacticRadius;
-        angle += randomGauss(pow(normalMag,5)-1.25f, 1.25f-pow(normalMag,5));
+        angle += random(pow(normalMag,5)-1.25f, 1.25f-pow(normalMag,5));
 
-        float mass = randomGauss(0.5 * 1.989e30f, (2.0f - normalMag) * 50.0f * 1.989e30f);
+        float mass = randomGauss(0.5, (2.0f - normalMag) * 500.0f);
 
         initPos[index] = magnitude * cos(angle);
         initPos[index+1] = magnitude * sin(angle);
-        initPos[index+2] = galacticBuldge * random(0.0f, pow(1.0f-normalMag, 3.0f));
-        if (random(-1,1) > 0) {
-            initPos[index+2] *= -1.0;
-        }
+	    float lpitch = random(-pow(1.0f-normalMag, 5.0f), pow(1.0f-normalMag, 5.0f));
+        initPos[index+2] = galacticBuldge * lpitch + (diskRadius * randomGauss(-1.0f,1.0f));
 
-        float vMag = sqrt(blackHoleMass * 6.67384e-11f / 1e18f / magnitude);
+        float vMag = (float) sqrt(1.567783995250E-28 * (totalMass + (2.0E6 * magnitude)) / magnitude);//*/pow((blackHoleMass+(1e5f * normalMag)) * 6.67384e-11f * 1.989e30f / 1e18f / magnitude, 0.55f) * (1.0f - fabs(lpitch));
         initVel[vIndex] = sin(angle) * -vMag;
         initVel[vIndex+1] = cos(angle) * vMag;
         initVel[vIndex+2] = 0;
 
         // Mass value
         initPos[index + 3] = mass;
+
+        totalMass += mass;
     }
+
+    initPos[offset*4] = initPos[offset*4+1] = initPos[offset*4+2] = 0;
+    initPos[offset*4+3] = blackHoleMass;
+    initVel[offset*4] = initVel[offset*4+1] = initVel[offset*4+2] = initVel[offset*4+3] = 0;
     for(int i = offset; i < offset + count; ++i)
     {
         int index = 4 * i;
@@ -136,8 +142,8 @@ NBody::setupNBody()
     // initialization of inputs
     int countPer = numBodies;
     generateGalaxy(countPer, 0, 3, 0, 0, 0, 0, 0, 0, 0);
-    //generateGalaxy(countPer, countPer, 3, 4.25f, 75000 * 9.4605284e9f, 0, 75000 * 9.4605284e9f, -.01f/315576000000.0f * 9.4605284e9f, 0, -.01f/315576000000.0f * 9.4605284e9f);
-
+//    generateGalaxy(countPer, countPer, 3, 4.25f, 75000, 0, 75000, -.01f/315576000000.0f, 0, -.01f/315576000000.0f);
+    centerObject = 0;
     /*
     for(int i = 0; i < numBodies; ++i)
     {
@@ -526,19 +532,18 @@ reShape(int w,int h)
     glViewport(0, 0, w, h);
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
-    gluPerspective(45.0f, w/h, 1.0f, 1e50f);
+    gluPerspective(45.0f, w/h, 1.0f, 1e27f);
     gluLookAt (0.0, 0.0, -2.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0);
 }
 
-int yaw = 0, pitch = 90;
-float scale = 50000 * 9.4605284e9f;
+int yaw = 0, pitch = 25;
+float scale = 50000;// * 9E15;//9.4605284e9f;
 void displayfunc()
 {
     static int numFrames = 0;
 
     glClearColor(0.0 ,0.0, 0.0, 0.0);
-    glClear(GL_COLOR_BUFFER_BIT);
-    glClear(GL_DEPTH_BUFFER_BIT);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     glPointSize(1.0);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE);
@@ -561,16 +566,38 @@ void displayfunc()
     nb->runCLKernels();
 
     glLoadIdentity();
-    glTranslated(-pos[0]/scale, -pos[1]/scale, -pos[2]/scale);
     glRotatef(pitch, 1, 0, 0);
     glRotatef(yaw, 0, 1, 0);
     glRotatef(90, 1, 0, 0);
 
+    float bDist = sqrt(pow(pos[nb->centerObject<<2]-pos[0],2) + pow(pos[(nb->centerObject<<2)+1]-pos[1],2) + pow(pos[(nb->centerObject<<2)+2] - pos[2], 2));
+    // printf("Scale %f->%f\n", bDist, scale);
+
+    glTranslated((pos[nb->centerObject<<2]+pos[0])/(2*-scale), (pos[(nb->centerObject<<2)+1]+pos[1])/(2*-scale), (pos[(nb->centerObject<<2)+2]+pos[2])/(2*-scale));
+
     glBegin(GL_POINTS);
     for(int i = 0; i < numBodies; ++i,pos+=4)
     {
-        //divided by 300 just for scaling
-        glVertex4f(*pos,*(pos+1),*(pos+2),scale);
+        glPointSize(1.0);
+        if (*(pos+3) > 0.0f) {
+            if (*(pos+3) > 1E6) {
+                glEnd();
+                glPointSize(10.0);
+                glBegin(GL_POINTS);
+                glColor3f(1.0f, 0.5f, 0.5f);
+                glVertex4f(*pos,*(pos+1),*(pos+2),scale);
+                glEnd();
+                glPointSize(1.0);
+                glBegin(GL_POINTS);
+            } else {
+
+                glColor3f(1.0f, 0.5f, 0.5f);
+                glVertex4f(*pos,*(pos+1),*(pos+2),scale);
+            }
+        } else {
+            glColor3f(0.0f,1.0f,0.0f);
+            glVertex4f(*pos,*(pos+1),*(pos+2),scale);
+        }
     }
     glEnd();
     nb->releaseMappedParticlePositions();
@@ -734,6 +761,7 @@ main(int argc, char * argv[])
         glutReshapeFunc(reShape);
         glutIdleFunc(idle);
         glutKeyboardFunc(keyboardFunc);
+        sleep(10);
         glutMainLoop();
     }
 
